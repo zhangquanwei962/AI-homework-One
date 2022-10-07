@@ -7,10 +7,11 @@
   
 采用`pytorch`提供的预训练好的`ResNet18`，（`ResNet101`把服务器显卡都跑挂了）  
 
-**如果是只有单个GPU的话，请运行`main2.py`**；  
+**如果是只有单个GPU的话，请把第一句`net = nn.DataParallel(net, device_ids=devices).to(devices[0])
+    #net.to(devices[0])`注释掉，第二句打开**；  
   
 
-**如果是多个GPU的话，请运行`main1.py`;**  
+**如果是多个GPU的话，请运行`main1.py`获取resnet18， 运行`main-resnet34.py`获取resnet34;**  
   
     
 ___
@@ -29,7 +30,8 @@ ___
 >>> cifar-10-batches-py  
 
 >> main1.py  
->> main2.py
+>> main2.py  
+>> main-resnet34.py
 
 **请注意，如果`data`下面没有数据集的话，请把`trainset = torchvision.datasets.CIFAR10(root='./data/', train=True,download=False, transform=transform_train)`和`testset = torchvision.datasets.CIFAR10(root='./data/', train=False, download=False, transform=transform_test)`里面的`download`改成`True`**  
   
@@ -37,5 +39,6 @@ ___
 ## 3.Run
 一切准备就绪，就直接在你所有的虚拟环境运行即可  
 `python3 main1.py`，等待程序结束
-
+## 4.Issue
+如果有问题，请提issue，看到会处理
 

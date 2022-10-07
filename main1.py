@@ -50,8 +50,10 @@ def get_net():
     classes = ('plane', 'car', 'bird', 'cat', 'deer',
     'dog', 'frog', 'horse', 'ship', 'truck')
     net = models.resnet18(pretrained=True)
-    #net_fit = net.fc.in_features
-    net.fc=torch.nn.Linear(512, 10)
+    #for param in net.parameters():
+        #param.requires_grad = False
+    net_fit = net.fc.in_features
+    net.fc=torch.nn.Linear(net_fit, 10)
     #net = nn.Sequential(nn.Linear(net_fit, 10), nn.Softmax(dim=1)) 
     return net
 

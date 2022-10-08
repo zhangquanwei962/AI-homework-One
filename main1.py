@@ -132,10 +132,10 @@ def train_batch_ch13(net, X, y, loss, trainer, devices):
 
 def train(net, train_iter, valid_iter, num_epochs, lr, wd, devices, lr_period, lr_decay):
 
-    def init_weights(m):
+    '''def init_weights(m):
         if type(m) == nn.Linear or type(m) == nn.Conv2d:
             nn.init.kaiming_uniform_(m.weight, a=0, mode='fan_in')
-    
+    '''
     '''def init_weights(m):
         if type(m) in [nn.Linear, nn.Conv2d]:
             nn.init.xavier_uniform_(m.weight)

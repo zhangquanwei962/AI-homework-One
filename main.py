@@ -5,19 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.nn import functional as F
 from torch import nn
-
-
-
-def try_all_gpus(): 
-    """返回所有可用的GPU,如果没有GPU,则返回[cpu(),]"""
-    devices = [torch.device(f'cuda:{i}') for i in range(torch.cuda.device_count())]
-    return devices if devices else [torch.device('cpu')]
-
-def try_gpu(i=0): 
-    """如果存在,则返回gpu(i),否则返回cpu()"""
-    if torch.cuda.device_count() >= i + 1:
-        return torch.device(f'cuda:{i}')
-    return torch.device('cpu')
+from torchvision import models
+from torch.autograd import Variable
 
 transform_train = torchvision.transforms.Compose([
     # 在高度和宽度上将图像放大到40像素的正方形
@@ -44,70 +33,83 @@ batch_size = 128
 trainset = torchvision.datasets.CIFAR10(root='./data/', train=True,
                                         download=False, transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
-                                        shuffle=False,num_workers=2, drop_last=True)
+                                        shuffle=True,num_workers=2, drop_last=True)
 
 testset = torchvision.datasets.CIFAR10(root='./data/', train=False, 
-                                        download=True, transform=transform_test)
+                                        download=False, transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, 
                                         shuffle=False, num_workers=2, drop_last=True)
 
-classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+def try_all_gpus(): 
+    """返回所有可用的GPU,如果没有GPU,则返回[cpu(),]"""
+    devices = [torch.device(f'cuda:{i}') for i in range(torch.cuda.device_count())]
+    return devices if devices else [torch.device('cpu')]
+
+def get_net():
+    classes = ('plane', 'car', 'bird', 'cat', 'deer',
+    'dog', 'frog', 'horse', 'ship', 'truck')
+    net = models.resnet18(pretrained=True)
+    #for param in net.parameters():
+        #param.requires_grad = False
+    net_fit = net.fc.in_features
+    net.fc=torch.nn.Linear(net_fit, 10)
+    #net = nn.Sequential(nn.Linear(net_fit, 10), nn.Softmax(dim=1)) 
+    return net
+
+#net = get_net()   
 
 
-class Residual(nn.Module):
-    def __init__(self, input_channels, num_channels,
-                 use_1x1conv=False, strides=1):
-        super().__init__()
-        self.conv1 = nn.Conv2d(input_channels, num_channels,
-                               kernel_size=3, padding=1, stride=strides)
-        self.conv2 = nn.Conv2d(num_channels, num_channels,
-                               kernel_size=3, padding=1)
-        if use_1x1conv:
-            self.conv3 = nn.Conv2d(input_channels, num_channels,
-                                   kernel_size=1, stride=strides)
-        else:
-            self.conv3 = None
-        self.bn1 = nn.BatchNorm2d(num_channels)
-        self.bn2 = nn.BatchNorm2d(num_channels)
+#devices=torch.device("cuda:0" if torch.cuda.is_available() else"cpu")
+#devices = [torch.device(f'cuda:{i}') for i in range(torch.cuda.device_count())]
 
-    def forward(self, X):
-        Y = F.relu(self.bn1(self.conv1(X)))
-        Y = self.bn2(self.conv2(Y))
-        if self.conv3:
-            X = self.conv3(X)
-        Y += X
-        return F.relu(Y)
 
-b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
-                   nn.BatchNorm2d(64), nn.ReLU(),
-                   nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
-def resnet_block(input_channels, num_channels, num_residuals,
-                 first_block=False):
-    blk = []
-    for i in range(num_residuals):
-        if i == 0 and not first_block:
-            blk.append(Residual(input_channels, num_channels,
-                                use_1x1conv=True, strides=2))
-        else:
-            blk.append(Residual(num_channels, num_channels))
-    return blk
-b2 = nn.Sequential(*resnet_block(64, 64, 2, first_block=True))
-b3 = nn.Sequential(*resnet_block(64, 128, 2))
-b4 = nn.Sequential(*resnet_block(128, 256, 2))
-b5 = nn.Sequential(*resnet_block(256, 512, 2))
-net = nn.Sequential(b1, b2, b3, b4, b5,
-                    nn.AdaptiveAvgPool2d((1,1)),
-                    nn.Flatten(), nn.Linear(512, 10))
+#print(net)
+#optimizer = torch.optim.SGD(net.parameters(), lr=2e-4, momentum=0.9, weight_decay=5e-4) #weight_decay为权重衰减  amsgrad=True
+#scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4,gamma=0.9) #优化lr,每隔 lr_period个epoch就给当前的lr乘以lr_decay
 
-loss = nn.CrossEntropyLoss(reduction="none")
-loss = nn.CrossEntropyLoss(reduction="none")
+def accuracy(pred,target):
+    correct = 0.
+    pred_label=torch.argmax(pred, 1)  #返回每张照片10个预测值里面最大数的标签
+    correct += (pred_label==target).to(torch.float).sum().item() #如果这个标签等于真实标签，则将数值转化为个数，转化为float类型并返回给correct
+    return correct, len(pred)#返回正确的个数
 
-def accuracy(y_hat, y):  #@save
+acc={'train':[],"val":[]}
+loss_all={'train':[],"val":[]}
+
+loss=nn.CrossEntropyLoss(reduction="none")
+best_acc=0
+
+'''def accuracy(y_hat, y):  #@save
     """计算预测正确的数量"""
     if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
         y_hat = y_hat.argmax(axis=1)
     cmp = y_hat.type(y.dtype) == y
-    return float(cmp.type(y.dtype).sum())
+    return float(cmp.type(y.dtype).sum()), len(y_hat)
+'''
+def evaluate_accuracy_gpu(net, data_iter, device=None): #@save
+    """使用GPU计算模型在数据集上的精度"""
+    if isinstance(net, nn.Module):
+        net.eval()  # 设置为评估模式
+        if not device:
+            device = next(iter(net.parameters())).device
+    valid_loss, vaild_acc_sum, valid_prednum_sum = 0., 0., 0.
+    with torch.no_grad():
+        for X, y in data_iter:
+            if isinstance(X, list):
+                # BERT微调所需的（之后将介绍）
+                X = [x.to(device) for x in X]
+            else:
+                X = X.to(device)
+            y = y.to(device)
+            outputs = net(X)
+            l = loss(outputs, y)
+
+            vaild_acc, valid_prednum = accuracy(outputs, y)
+            vaild_acc_sum += vaild_acc
+            valid_prednum_sum += valid_prednum
+            valid_loss += l.sum()
+    return valid_loss, vaild_acc_sum, valid_prednum_sum
 
 def train_batch_ch13(net, X, y, loss, trainer, devices):
     """用多GPU进行小批量训练"""
@@ -124,77 +126,119 @@ def train_batch_ch13(net, X, y, loss, trainer, devices):
     l.sum().backward()
     trainer.step()
     train_loss_sum = l.sum()
-    train_acc_sum = accuracy(pred, y)
-    return train_loss_sum, train_acc_sum
-class Accumulator:  #@save
-    """在`n`个变量上累加。"""
-    def __init__(self, n):
-        self.data = [0.0] * n
-        print(self.data)
-
-    def add(self, *args):
-        for a, b in zip(self.data, args):   # 分别输出一下a,b
-            print(a, b)
-
-        self.data = [a + float(b) for a, b in zip(self.data, args)]
-        print(self.data)
-
-    def reset(self):
-        self.data = [0.0] * len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
-
-def evaluate_accuracy_gpu(net, data_iter, device=None): #@save
-    """使用GPU计算模型在数据集上的精度"""
-    if isinstance(net, nn.Module):
-        net.eval()  # 设置为评估模式
-        if not device:
-            device = next(iter(net.parameters())).device
-    # 正确预测的数量，总预测的数量
-    metric = Accumulator(2)
     with torch.no_grad():
-        for X, y in data_iter:
-            if isinstance(X, list):
-                # BERT微调所需的（之后将介绍）
-                X = [x.to(device) for x in X]
-            else:
-                X = X.to(device)
-            y = y.to(device)
-            metric.add(accuracy(net(X), y), y.numel())
-    return metric[0] / metric[1]
+        train_acc_sum, train_prednum = accuracy(pred, y)
+    return train_loss_sum, train_acc_sum, train_prednum
 
-def train(net, train_iter, valid_iter, num_epochs, lr, wd, devices, lr_period,
-          lr_decay):
-    trainer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9,
-                              weight_decay=wd)
-    scheduler = torch.optim.lr_scheduler.StepLR(trainer, lr_period, lr_decay)
-    num_batches = len(train_iter)
-   
-    net = nn.DataParallel(net, device_ids=devices).to(devices[0])
+def train(net, train_iter, valid_iter, num_epochs, lr, wd, devices, lr_period, lr_decay):
+
+    '''def init_weights(m):
+        if type(m) == nn.Linear or type(m) == nn.Conv2d:
+            nn.init.kaiming_uniform_(m.weight, a=0, mode='fan_in')
+    '''
+    '''def init_weights(m):
+        if type(m) in [nn.Linear, nn.Conv2d]:
+            nn.init.xavier_uniform_(m.weight)
+    net.apply(init_weights)
+    '''
+
+    # net = nn.DataParallel(net, device_ids=devices).to(devices[0])
+    net.to(devices)
+    
+
+    optimizer = torch.optim.Adam(net.parameters(), lr=lr,weight_decay=wd) #weight_decay为权重衰减  amsgrad=True
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, lr_period, lr_decay) #优化lr,每隔 lr_period个epoch就给当前的lr乘以lr_decay
+
+    
     for epoch in range(num_epochs):
-        net.train()
-
+        print('epoch',epoch + 1,'*******************************')
+        #net.train()
+        train_total_loss,train_correctnum, train_prednum=0., 0., 0.
         for i, (features, labels) in enumerate(train_iter):
-            l, acc = train_batch_ch13(net, features, labels,
-                                          loss, trainer, devices)
-            if (i + 1) % (num_batches // 5) == 0 or i == num_batches - 1:
-                print(f'{l, acc}')
+            l, acc, prednum = train_batch_ch13(net, features, labels, loss, optimizer, devices)
+            train_total_loss += l
+            train_correctnum += acc
+            train_prednum += prednum
+            if i % 32 == 31 or i == batch_size - 1:
+                print('train: [%d/%d] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                    % (i, len(train_iter), train_total_loss/train_prednum, 100.*train_correctnum/train_prednum, train_correctnum, train_prednum))
 
-        
         if valid_iter is not None:
-            valid_acc = evaluate_accuracy_gpu(net, valid_iter)
-            
-        scheduler.step()
+            valid_total_loss,valid_correctnum, valid_prednum=0., 0., 0.
+            valid_total_loss, valid_correctnum, valid_prednum = evaluate_accuracy_gpu(net, valid_iter)
+            print('test: [%d/%d] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                % (i, len(valid_iter), valid_total_loss/valid_prednum, 100.*valid_correctnum/valid_prednum, valid_correctnum, valid_prednum))
 
+        scheduler.step()
+        train_loss = train_total_loss/train_prednum 
+        valid_loss = valid_total_loss/valid_prednum
+
+
+
+        print('Training Loss: {:.6f} \tValidation Loss: {:.6f}'.format(train_loss, valid_loss))
+        print('Training Acc: {:.6f} \tValidation Acc: {:.6f}'.format(train_correctnum/train_prednum,valid_correctnum/valid_prednum))
+
+devices, num_epochs, lr, wd = try_all_gpus(), 10, 1e-3, 5e-3
+lr_period, lr_decay, net = 4, 0.8, get_net()
+train(net, trainloader, testloader, num_epochs, lr, wd, devices, lr_period, lr_decay)
+#训练和验证
+'''
+net = nn.DataParallel(net, device_ids=devices).to(devices[0])
 
 def init_weights(m):
-    if type(m) in [nn.Linear, nn.Conv2d]:
-        nn.init.xavier_uniform_(m.weight)
-
+        if type(m) == nn.Linear or type(m) == nn.Conv2d:
+            nn.init.kaiming_uniform_(m.weight, a=0, mode='fan_in')
 net.apply(init_weights)
+for epoch in range(10):
+    
+    print('epoch',epoch+1,'*******************************')
+    
+    net.train()
+    train_total_loss,train_correctnum, train_prednum=0.,0.,0.
+    for images,labels in trainloader:
+        l, acc, prednum = train_batch_ch13(net, images, labels, celoss, optimizer, devices)
+        images,labels=images.to(devices),labels.to(devices)      
+        outputs=net(images)
+        loss=celoss(outputs,labels)
+        optimizer.zero_grad()
+        loss.sum().backward()
+        optimizer.step()
+        train_total_loss =loss.sum()
+        
+        #correctnum, prednum= accuracy(outputs,labels)
+        train_total_loss += l
+        train_correctnum += acc
+        train_prednum += prednum
+        
+       
+    net.eval()
+    valid_total_loss,valid_correctnum, valid_prednum=0.,0.,0.
+    for images,labels in testloader:
+        images,labels=images.to(devices[0]),labels.to(devices[0]) 
+        images = Variable(images,requires_grad=True)
+        #labels = Variable(labels,requires_grad=True)
+        with torch.no_grad():  
+            outputs=net(images)
+        loss=celoss(outputs,labels)
+        valid_total_loss += loss.sum()
+        
+        correctnum,prednum= accuracy(outputs,labels)
+        valid_correctnum +=correctnum
+        valid_prednum +=prednum
+    scheduler.step()
+    '''
 
-devices, num_epochs, lr, wd = try_all_gpus(), 20, 2e-4, 5e-4
-lr_period, lr_decay =  4, 0.9
-train(net, trainloader, testloader, num_epochs, lr, wd, devices, lr_period,
-      lr_decay)
+    #计算平均损失
+''' train_loss = train_total_loss/len(trainloader) 
+        valid_loss = valid_total_loss/len(testloader)
+    
+    """将损失值存入字典"""
+        loss_all['train'].append(train_loss ) 
+        loss_all['val'].append(valid_loss)
+    """将准确率存入字典"""
+    #acc['train'].append(train_correctnum/train_prednum)
+    #acc['val'].append(valid_correctnum/valid_prednum)
+#     lr.append(lr)
+    print('Training Loss: {:.6f} \tValidation Loss: {:.6f}'.format(train_loss, valid_loss))
+    print('Training Acc: {:.6f} \tValidation Acc: {:.6f}'.format(train_correctnum/train_prednum,valid_correctnum/valid_prednum))
+    '''

@@ -7,8 +7,7 @@
   
 采用`pytorch`提供的预训练好的`ResNet18`，（`ResNet101`把服务器显卡都跑挂了）  
 
-**如果是只有单个GPU的话，请把第一句`net = nn.DataParallel(net, device_ids=devices).to(devices[0])
-    #net.to(devices[0])`注释掉，第二句打开**；  
+**如果是只有单个GPU的话，请运行main.py**；  
   
 
 **如果是多个GPU的话，请运行`main1.py`获取resnet18， 运行`main-resnet34.py`获取resnet34;**  

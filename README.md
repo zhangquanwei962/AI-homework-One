@@ -39,6 +39,8 @@ ___
 ## 3.Run
 一切准备就绪，就直接在你所有的虚拟环境运行即可  
 `python3 main1.py`，等待程序结束
-## 4.Issue
+## hyper parameter
+batch_size epoch lr weigth_decy 
+## 5.Issue
 如果有问题，请提issue，看到会处理
 
